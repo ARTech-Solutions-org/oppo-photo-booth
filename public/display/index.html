@@ -744,7 +744,7 @@
     // ─── Instant Cloud Sync via EventSource (100% Free, Zero Setup) ──────────
     function connectNtfyCloudSync() {
       const room = new URLSearchParams(location.search).get('room') || 'default';
-      const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}/json`;
+      const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}/sse`;
 
       try {
         const es = new EventSource(ntfyUrl);
