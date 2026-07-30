@@ -26,26 +26,25 @@ for /f "tokens=*" %%i in ('node -e "const os=require('os');const ifaces=os.netwo
 
 echo.
 echo  =====================================================
-echo   LOCAL WEBSOCKET HTTPS LINKS:
+echo   LOCAL WEBSOCKET LINKS (10.10 IP):
 echo  =====================================================
 echo.
 echo   [1] Display Screen (PC):
-echo       https://localhost:3000/display
-echo       (or https://%LOCAL_IP%:3000/display)
+echo       https://%LOCAL_IP%:3000/display
 echo.
 echo   [2] Mobile Capture (Phone):
 echo       https://%LOCAL_IP%:3000/capture
 echo.
 echo  =====================================================
-echo   IMPORTANT ON PHONE:
-echo   1. Open https://%LOCAL_IP%:3000/capture on your phone
-echo   2. If you see a security warning, tap "Advanced" then "Proceed"
-echo   3. Allow Camera permission!
+echo   IMPORTANT:
+echo   1. Open both links on PC and phone.
+echo   2. Accept security warning (Advanced -> Proceed).
+echo   3. Allow Camera permission on phone!
 echo  =====================================================
 echo.
 
-:: Open Display screen in default browser
-start "" "https://localhost:3000/display"
+:: Open Display screen in default browser on 10.10 IP
+start "" "https://%LOCAL_IP%:3000/display"
 
 pause
 

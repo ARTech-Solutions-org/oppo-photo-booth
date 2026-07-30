@@ -113,21 +113,34 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 }
 
 // Local WebSockets
-const displayClients = new Set();
+const allClients = new Set();
 try {
   const wss = new WebSocket.Server({ server });
   wss.on('connection', (ws, req) => {
-    const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
-    if (clientType === 'display') displayClients.add(ws);
-    ws.on('close', () => displayClients.delete(ws));
-    ws.on('error', () => displayClients.delete(ws));
+    allClients.add(ws);
+    console.log(`[WS] 🟢 New client connected! Total active clients: ${allClients.size}`);
+
+    ws.on('close', () => {
+      allClients.delete(ws);
+      console.log(`[WS] 🔴 Client disconnected. Total active clients: ${allClients.size}`);
+    });
+
+    ws.on('error', (err) => {
+      allClients.delete(ws);
+      console.error('[WS] Client error:', err.message);
+    });
   });
-} catch (e) {}
+} catch (e) {
+  console.error('[WS] Failed to initialize WebSocket server:', e.message);
+}
 
 function broadcastToDisplays(event, payload) {
   const message = JSON.stringify({ event, payload });
-  for (const client of displayClients) {
-    if (client.readyState === WebSocket.OPEN) client.send(message);
+  console.log(`[WS] 📡 Broadcasting event '${event}' to ${allClients.size} client(s)...`);
+  for (const client of allClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
   }
 }
 
