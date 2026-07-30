@@ -43,27 +43,28 @@ function getSession(id) {
 }
 
 /**
- * Upload photo buffer to free direct cloud storage (Catbox.moe)
+ * Upload photo buffer to free direct cloud storage (ImgBB API)
  */
 async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
+  const apiKey = process.env.IMGBB_API_KEY || 'f4bf068bcf753c6011500f69584f62d3';
   try {
     const form = new FormData();
-    form.append('reqtype', 'fileupload');
-    const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
-    form.append('fileToUpload', blob, filename);
+    form.append('image', imageBuffer.toString('base64'));
 
-    const res = await fetch('https://catbox.moe/user/api.php', {
+    const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
       method: 'POST',
       body: form,
     });
 
-    const url = (await res.text()).trim();
-    if (url && url.startsWith('http')) {
-      console.log('[Cloud Storage] ✓ Uploaded to direct URL:', url);
-      return url;
+    const data = await res.json();
+    if (data && data.success && data.data && data.data.url) {
+      console.log('[Cloud Storage] ✓ Uploaded to ImgBB direct URL:', data.data.url);
+      return data.data.url;
+    } else {
+      console.warn('[Cloud Storage] ImgBB response notice:', data);
     }
   } catch (e) {
-    console.warn('[Cloud Storage] Catbox upload notice:', e.message);
+    console.warn('[Cloud Storage] ImgBB upload error:', e.message);
   }
   return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 }
