@@ -1,31 +1,16 @@
 /**
  * qr.js
- * Generates a QR code data URL for a given photo download link.
+ * Generates a lightweight QR code URL for a given photo download link.
  */
-
-const QRCode = require('qrcode');
 
 /**
- * Generate a QR code as a base64 data URL.
+ * Generate a QR code URL.
  * @param {string} url - The URL to encode in the QR code.
- * @returns {Promise<string>} - Data URL (image/png base64)
+ * @returns {Promise<string>} - A direct URL to the QR code image
  */
 async function generateQRCode(url) {
-  try {
-    const dataUrl = await QRCode.toDataURL(url, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 400,
-      color: {
-        dark: '#0A0A0A',
-        light: '#FFFFFF',
-      },
-    });
-    return dataUrl;
-  } catch (err) {
-    console.error('[QR] Failed to generate QR code:', err);
-    throw err;
-  }
+  // Using an external API to keep the payload size under 4KB for ntfy.sh
+  return `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(url)}`;
 }
 
 module.exports = { generateQRCode };
