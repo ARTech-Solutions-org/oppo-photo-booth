@@ -1,8 +1,8 @@
 /**
  * server/index.js
  * Express server for OPPO Photobooth.
- * Vercel-ready with zero-disk storage (Base64 Data URLs).
- * Uses ntfy.sh (100% Free Public PubSub) + WebSockets for instant realtime sync.
+ * Vercel-ready with instant Catbox.moe direct image hosting + ntfy.sh realtime cloud sync.
+ * 100% FREE, 0-Setup, instant sync between Mobile and Display on Vercel.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
 const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// ─── Memory Storage ───────────────────────────────────────────────────────────
+// In-Memory Session Store
 const sessionsMap = new Map();
 let latestSession = null;
 
@@ -40,6 +40,33 @@ function setSession(session) {
 
 function getSession(id) {
   return sessionsMap.get(id) || null;
+}
+
+/**
+ * Upload image buffer to free direct image host (catbox.moe)
+ */
+async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
+  try {
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
+    form.append('fileToUpload', blob, filename);
+
+    const res = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: form,
+    });
+
+    const url = (await res.text()).trim();
+    if (url && url.startsWith('http')) {
+      console.log('[Cloud Storage] ✓ Uploaded to direct URL:', url);
+      return url;
+    }
+  } catch (e) {
+    console.warn('[Cloud Storage] Catbox upload failed:', e.message);
+  }
+  // Fallback to base64 if cloud host fails
+  return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 }
 
 // ─── Express App ─────────────────────────────────────────────────────────────
@@ -106,7 +133,7 @@ app.get('/api/latest', (req, res) => {
 
   res.json({
     id: session.id,
-    imageUrl: session.imageBase64,
+    imageUrl: session.imageUrl,
     qrUrl: session.qrUrl,
     timestamp: session.timestamp,
   });
@@ -114,7 +141,6 @@ app.get('/api/latest', (req, res) => {
 
 /**
  * POST /api/capture
- * Processes photo with AI, broadcasts via local WS + ntfy.sh (Free Realtime Sync).
  */
 app.post('/api/capture', upload.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file received.' });
@@ -127,12 +153,13 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
   const dynamicBaseUrl = `${protocol}://${host}`;
 
   console.log(`[Capture] New photo — ID: ${id} | Room: ${room}`);
-  res.json({ id, status: 'processing' });
 
   try {
     const imageBuffer = req.file.buffer;
     const processedBuffer = await processImage(imageBuffer, mimeType);
-    const imageBase64 = `data:image/jpeg;base64,${processedBuffer.toString('base64')}`;
+
+    // Upload to direct free cloud URL so it's lightweight and works across Vercel Lambdas
+    const directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
 
     const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
     const qrUrl = await generateQRCode(photoPageUrl);
@@ -141,7 +168,7 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
       id,
       timestamp: new Date().toISOString(),
       status: 'ready',
-      imageBase64,
+      imageUrl: directImageUrl,
       photoPageUrl,
       qrUrl,
       room,
@@ -151,17 +178,17 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 
     console.log(`[Capture] 🎉 Photo ready! Syncing to room "${room}"...`);
 
-    // Broadcast local WebSockets
-    broadcastToDisplays('new_photo_ready', { id, imageUrl: imageBase64, qrUrl });
+    // 1. Broadcast local WebSockets
+    broadcastToDisplays('new_photo_ready', { id, imageUrl: directImageUrl, qrUrl });
 
-    // Broadcast via ntfy.sh (100% Free Public Realtime Sync for Vercel)
+    // 2. Broadcast via ntfy.sh (Instant cloud sync for Vercel)
     try {
       await fetch(`https://ntfy.sh/oppo_booth_${room}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           event: 'new_photo_ready',
-          payload: { id, imageUrl: imageBase64, qrUrl },
+          payload: { id, imageUrl: directImageUrl, qrUrl },
         }),
       });
       console.log(`[ntfy] ✓ Instant cloud sync sent to "oppo_booth_${room}"`);
@@ -169,9 +196,13 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
       console.warn('[ntfy] Cloud sync warning:', nErr.message);
     }
 
+    // Return response to mobile client AFTER sync is complete
+    res.json({ id, status: 'ready', imageUrl: directImageUrl, qrUrl });
+
   } catch (err) {
     console.error('[Capture] Processing error:', err.message || err);
     broadcastToDisplays('processing_error', { id, message: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -198,7 +229,7 @@ app.get('/photo/:id', (req, res) => {
   const templatePath = path.join(__dirname, '../public/photo/index.html');
   let html = fs.readFileSync(templatePath, 'utf8');
   html = html
-    .replace(/\{\{IMAGE_URL\}\}/g, session.imageBase64)
+    .replace(/\{\{IMAGE_URL\}\}/g, session.imageUrl)
     .replace(/\{\{PHOTO_ID\}\}/g, id)
     .replace(/\{\{TIMESTAMP\}\}/g, new Date(session.timestamp).toLocaleString());
 
