@@ -86,17 +86,19 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// HTTPS / HTTP Server
+// HTTPS / HTTP Server (Standard HTTP for reliable local WebSocket connections)
 let server;
 const CERT_DIR = path.join(__dirname, 'certs');
 const keyPath = path.join(CERT_DIR, 'key.pem');
 const certPath = path.join(CERT_DIR, 'cert.pem');
 
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+if (process.env.USE_HTTPS === 'true' && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
   const sslOptions = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
   server = https.createServer(sslOptions, app);
+  console.log('[Server] Running in HTTPS mode');
 } else {
   server = http.createServer(app);
+  console.log('[Server] Running in HTTP mode (Standard WebSocket)');
 }
 
 // Local WebSockets
@@ -263,8 +265,8 @@ if (require.main === module) {
     console.log('╔══════════════════════════════════════════════════════════╗');
     console.log('║    🟢  OPPO PHOTOBOOTH SERVER (VERCEL READY) STARTED 🟢  ║');
     console.log('╠══════════════════════════════════════════════════════════╣');
-    console.log(`║  Display Screen :  https://localhost:${PORT}/display         ║`);
-    console.log(`║  Mobile Capture :  https://${localIP}:${PORT}/capture   ║`);
+    console.log(`║  Display Screen :  http://localhost:${PORT}/display          ║`);
+    console.log(`║  Mobile Capture :  http://${localIP}:${PORT}/capture    ║`);
     console.log('╚══════════════════════════════════════════════════════════╝');
     console.log('');
   });
