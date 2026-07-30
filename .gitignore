@@ -1,0 +1,5 @@
+node_modules/
+uploads/original/
+uploads/processed/
+.env
+*.log

@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OPPO Photobooth — Display</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --oppo-green: #1AAE55;
+      --oppo-green-dark: #0e6b35;
+      --oppo-green-light: #2edf72;
+      --oppo-green-glow: rgba(26, 174, 85, 0.65);
+      --oppo-green-subtle: rgba(26, 174, 85, 0.15);
+      --bg: #020302;
+      --bg-2: #050805;
+      --text: #ffffff;
+      --text-muted: rgba(255,255,255,0.55);
+      --glass: rgba(255,255,255,0.05);
+      --glass-border: rgba(255,255,255,0.12);
+      --radius: 28px;
+      --transition: 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Poppins', sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Full screens ───────────────────────────────────────── */
+    .fullscreen {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .fade-screen {
+      transition: opacity var(--transition), visibility var(--transition);
+    }
+
+    .fade-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .fade-screen.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* ╔══════════════════════════════════════════════════════╗ */
+    /* ║              SCREENSAVER SCREEN                      ║ */
+    /* ╚══════════════════════════════════════════════════════╝ */
+    #screensaver {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    /* Animated gradient background */
+    .ss-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 900px 900px at 50% 28%, rgba(26, 174, 85, 0.30) 0%, transparent 65%),
+        radial-gradient(ellipse 600px 600px at 15% 85%, rgba(26, 174, 85, 0.18) 0%, transparent 60%),
+        radial-gradient(ellipse 500px 500px at 88% 12%, rgba(46, 223, 114, 0.14) 0%, transparent 60%),
+        radial-gradient(ellipse 400px 400px at 80% 75%, rgba(26, 174, 85, 0.10) 0%, transparent 55%);
+      animation: bgBreath 5s ease-in-out infinite;
+    }
+
+    @keyframes bgBreath {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.65; transform: scale(1.06); }
+    }
+
+    /* Subtle grid overlay */
+    .ss-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(26,174,85,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(26,174,85,0.04) 1px, transparent 1px);
+      background-size: 80px 80px;
+      animation: gridDrift 20s linear infinite;
+    }
+
+    @keyframes gridDrift {
+      from { transform: translate(0, 0); }
+      to { transform: translate(80px, 80px); }
+    }
+
+    /* Floating particles */
+    .particles {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      background: var(--oppo-green);
+      opacity: 0;
+      animation: particleFloat linear infinite;
+      box-shadow: 0 0 6px var(--oppo-green);
+    }
+
+    @keyframes particleFloat {
+      0% { transform: translateY(0) scale(0); opacity: 0; }
+      8% { opacity: 0.85; }
+      85% { opacity: 0.35; }
+      100% { transform: translateY(-1920px) scale(1.8); opacity: 0; }
+    }
+
+    /* Light streak lines */
+    .light-streaks {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .streak {
+      position: absolute;
+      width: 1.5px;
+      background: linear-gradient(to top, transparent, var(--oppo-green-light), transparent);
+      opacity: 0;
+      animation: streakRise linear infinite;
+      filter: blur(0.5px);
+    }
+
+    @keyframes streakRise {
+      0% { transform: translateY(1920px); opacity: 0; }
+      4% { opacity: 0.7; }
+      90% { opacity: 0.25; }
+      100% { transform: translateY(-200px); opacity: 0; }
+    }
+
+    /* ── Center Content ─────────────────────────────────────── */
+    .ss-center {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      text-align: center;
+    }
+
+    /* Glowing orb behind logo */
+    .ss-glow-orb {
+      position: absolute;
+      width: 700px;
+      height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(26,174,85,0.35) 0%, rgba(26,174,85,0.08) 50%, transparent 70%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      animation: orbBreath 4s ease-in-out infinite;
+      pointer-events: none;
+      filter: blur(2px);
+    }
+
+    @keyframes orbBreath {
+      0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.8; }
+      50% { transform: translate(-50%,-50%) scale(1.3); opacity: 0.4; }
+    }
+
+    /* Rotating ring around logo */
+    .ss-ring-wrap {
+      position: relative;
+      width: 340px;
+      height: 340px;
+      margin-bottom: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ss-ring {
+      position: absolute;
+      border-radius: 50%;
+      border-style: solid;
+      border-color: transparent;
+    }
+
+    .ss-ring-1 {
+      inset: 0;
+      border-width: 1.5px;
+      border-top-color: var(--oppo-green);
+      border-right-color: rgba(26,174,85,0.3);
+      animation: ringRotate 8s linear infinite;
+    }
+
+    .ss-ring-2 {
+      inset: 20px;
+      border-width: 1px;
+      border-bottom-color: var(--oppo-green-light);
+      border-left-color: rgba(34,212,105,0.2);
+      animation: ringRotate 12s linear infinite reverse;
+    }
+
+    .ss-ring-3 {
+      inset: 40px;
+      border-width: 0.5px;
+      border-top-color: rgba(26,174,85,0.4);
+      animation: ringRotate 20s linear infinite;
+    }
+
+    @keyframes ringRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .ss-logo-container {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(26,174,85,0.15) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .ss-logo {
+      width: 200px;
+      filter: brightness(0) invert(1);
+      animation: logoGlow 3s ease-in-out infinite;
+    }
+
+    @keyframes logoGlow {
+      0%, 100% { 
+        filter: brightness(0) invert(1) drop-shadow(0 0 25px rgba(26,174,85,0.7)) drop-shadow(0 0 50px rgba(26,174,85,0.3));
+      }
+      50% { 
+        filter: brightness(0) invert(1) drop-shadow(0 0 50px rgba(46,223,114,1)) drop-shadow(0 0 100px rgba(26,174,85,0.6));
+      }
+    }
+
+    /* ── Screensaver Typography ──────────────────────────────── */
+    .ss-tagline {
+      font-size: 20px;
+      font-weight: 300;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      animation: fadeInUp 1s ease 0.3s both;
+    }
+
+    .ss-title {
+      font-size: 68px;
+      font-weight: 800;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, var(--oppo-green-light) 60%, var(--oppo-green) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+      animation: fadeInUp 1s ease 0.5s both;
+    }
+
+    .ss-subtitle {
+      font-size: 26px;
+      font-weight: 300;
+      color: var(--text-muted);
+      letter-spacing: 2px;
+      margin-bottom: 80px;
+      animation: fadeInUp 1s ease 0.7s both;
+    }
+
+    /* ── CTA strip ───────────────────────────────────────────── */
+    .ss-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 40px;
+      border: 1px solid rgba(26,174,85,0.35);
+      border-radius: 100px;
+      background: var(--oppo-green-subtle);
+      animation: ctaPulse 2.5s ease-in-out infinite, fadeInUp 1s ease 0.9s both;
+    }
+
+    @keyframes ctaPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(26,174,85,0.2); border-color: rgba(26,174,85,0.35); }
+      50% { box-shadow: 0 0 30px 8px rgba(26,174,85,0.08); border-color: rgba(26,174,85,0.6); }
+    }
+
+    .ss-cta-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--oppo-green);
+      animation: dotPulse 1.5s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--oppo-green-glow); }
+      50% { transform: scale(1.3); box-shadow: 0 0 0 6px transparent; }
+    }
+
+    .ss-cta-text {
+      font-size: 22px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.85);
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Bottom brand strip ──────────────────────────────────── */
+    .ss-bottom {
+      position: absolute;
+      bottom: 80px;
+      left: 0;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      z-index: 10;
+      animation: fadeInUp 1s ease 1.1s both;
+    }
+
+    .ss-bottom-line {
+      width: 80px;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--oppo-green), transparent);
+    }
+
+    .ss-bottom-text {
+      font-size: 15px;
+      font-weight: 300;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.3);
+    }
+
+    /* ╔══════════════════════════════════════════════════════╗ */
+    /* ║              PHOTO REVEAL SCREEN                     ║ */
+    /* ╚══════════════════════════════════════════════════════╝ */
+    #photo-reveal {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #080a08;
+      overflow: hidden;
+    }
+
+    /* Top bar */
+    .reveal-header {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 56px 80px 40px;
+      flex-shrink: 0;
+    }
+
+    .reveal-logo {
+      height: 40px;
+      filter: brightness(0) invert(1);
+      opacity: 0.9;
+    }
+
+    .reveal-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      border-radius: 100px;
+      background: var(--oppo-green-subtle);
+      border: 1px solid rgba(26,174,85,0.3);
+    }
+
+    .reveal-badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--oppo-green);
+      animation: dotPulse 1.5s ease-in-out infinite;
+    }
+
+    .reveal-badge-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--oppo-green-light);
+      letter-spacing: 0.5px;
+    }
+
+    /* Photo frame */
+    .reveal-photo-wrap {
+      position: relative;
+      flex: 1;
+      width: calc(100% - 80px);
+      margin: 0 40px;
+      min-height: 0;
+      border-radius: 32px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(26,174,85,0.2),
+        0 30px 80px rgba(0,0,0,0.6),
+        0 0 100px rgba(26,174,85,0.08);
+    }
+
+    #reveal-photo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      animation: photoReveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes photoReveal {
+      from { opacity: 0; transform: scale(1.05); filter: blur(10px); }
+      to { opacity: 1; transform: scale(1); filter: blur(0); }
+    }
+
+    /* Gradient overlay on photo bottom */
+    .reveal-photo-grad {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 300px;
+      background: linear-gradient(to top, rgba(8,10,8,0.85), transparent);
+    }
+
+    /* ── QR + Info Panel ─────────────────────────────────────── */
+    .reveal-bottom {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      padding: 48px 80px 64px;
+      display: flex;
+      align-items: center;
+      gap: 48px;
+      flex-shrink: 0;
+      background: linear-gradient(to bottom, transparent, rgba(8,10,8,0.7));
+    }
+
+    .reveal-qr-wrap {
+      flex-shrink: 0;
+      padding: 18px;
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 0 40px rgba(26,174,85,0.3);
+      animation: qrReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.4s both;
+    }
+
+    @keyframes qrReveal {
+      from { opacity: 0; transform: translateY(20px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    #reveal-qr {
+      width: 220px;
+      height: 220px;
+      display: block;
+      border-radius: 8px;
+    }
+
+    .reveal-info {
+      flex: 1;
+      animation: infoSlide 0.6s ease 0.5s both;
+    }
+
+    @keyframes infoSlide {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .reveal-info-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--oppo-green);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .reveal-info-title {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+
+    .reveal-info-sub {
+      font-size: 18px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+
+    /* Timer bar */
+    .reveal-timer-wrap {
+      width: 100%;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #reveal-timer-bar {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(to right, var(--oppo-green-dark), var(--oppo-green-light));
+      border-radius: 4px;
+      transform-origin: left;
+      animation: none;
+    }
+
+    /* ── Shared utilities ────────────────────────────────────── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║            SCREENSAVER SCREEN            ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <div id="screensaver" class="fullscreen fade-screen visible">
+    <!-- Animated background layers -->
+    <div class="ss-bg"></div>
+    <div class="ss-grid"></div>
+
+    <!-- Floating particles container (populated by JS) -->
+    <div class="particles" id="particles"></div>
+
+    <!-- Light streaks (populated by JS) -->
+    <div class="light-streaks" id="streaks"></div>
+
+    <!-- Glow orb -->
+    <div class="ss-glow-orb"></div>
+
+    <!-- Center hero -->
+    <div class="ss-center">
+      <!-- Rotating rings + logo -->
+      <div class="ss-ring-wrap">
+        <div class="ss-ring ss-ring-1"></div>
+        <div class="ss-ring ss-ring-2"></div>
+        <div class="ss-ring ss-ring-3"></div>
+        <div class="ss-logo-container">
+          <img src="/assets/logo/oppo-logo.png" alt="OPPO" class="ss-logo" />
+        </div>
+      </div>
+
+      <span class="ss-tagline">Experience the Moment</span>
+      <h1 class="ss-title">Capture.<br />Remember.<br />Share.</h1>
+      <p class="ss-subtitle">AI-Powered Photobooth</p>
+
+      <!-- CTA -->
+      <div class="ss-cta">
+        <div class="ss-cta-dot"></div>
+        <span class="ss-cta-text">Scan the mobile &amp; take your photo</span>
+      </div>
+    </div>
+
+    <!-- Bottom branding -->
+    <div class="ss-bottom">
+      <div class="ss-bottom-line"></div>
+      <span class="ss-bottom-text">Powered by OPPO AI</span>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║           PHOTO REVEAL SCREEN            ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <div id="photo-reveal" class="fullscreen fade-screen hidden">
+    <!-- Header -->
+    <div class="reveal-header">
+      <img src="/assets/logo/oppo-logo.png" alt="OPPO" class="reveal-logo" />
+      <div class="reveal-badge">
+        <div class="reveal-badge-dot"></div>
+        <span class="reveal-badge-text">AI Enhanced</span>
+      </div>
+    </div>
+
+    <!-- Photo -->
+    <div class="reveal-photo-wrap">
+      <img id="reveal-photo" src="" alt="Your OPPO photo" />
+      <div class="reveal-photo-grad"></div>
+    </div>
+
+    <!-- QR + Info -->
+    <div class="reveal-bottom">
+      <div class="reveal-qr-wrap">
+        <img id="reveal-qr" src="" alt="QR Code to download your photo" />
+      </div>
+
+      <div class="reveal-info">
+        <div class="reveal-info-label">Your Photo is Ready</div>
+        <div class="reveal-info-title">Scan to Save ✨</div>
+        <div class="reveal-info-sub">Point your phone camera at the QR code to download your AI-enhanced photo.</div>
+        <div class="reveal-timer-wrap">
+          <div id="reveal-timer-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── Config ──────────────────────────────────────────────────────────────
+    let IDLE_TIMEOUT_MS = 60000; // default, overridden from server config
+    let idleTimer = null;
+
+    // ─── Fetch server config ─────────────────────────────────────────────────
+    (async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        IDLE_TIMEOUT_MS = (cfg.idleTimeoutSeconds || 60) * 1000;
+        console.log('[Display] Idle timeout:', IDLE_TIMEOUT_MS / 1000, 's');
+      } catch (e) {
+        console.warn('[Display] Could not load config, using default 60s');
+      }
+    })();
+
+    // ─── Screen management ───────────────────────────────────────────────────
+    const screensaverEl = document.getElementById('screensaver');
+    const photoRevealEl = document.getElementById('photo-reveal');
+
+    function showScreensaver() {
+      photoRevealEl.classList.add('hidden');
+      photoRevealEl.classList.remove('visible');
+      screensaverEl.classList.remove('hidden');
+      screensaverEl.classList.add('visible');
+      clearTimeout(idleTimer);
+    }
+
+    function showPhotoReveal(imageUrl, qrUrl) {
+      // Set content
+      document.getElementById('reveal-photo').src = imageUrl;
+      document.getElementById('reveal-qr').src = qrUrl;
+
+      // Switch screens
+      screensaverEl.classList.add('hidden');
+      screensaverEl.classList.remove('visible');
+      photoRevealEl.classList.remove('hidden');
+      photoRevealEl.classList.add('visible');
+
+      // Animate timer bar
+      const timerBar = document.getElementById('reveal-timer-bar');
+      timerBar.style.transition = 'none';
+      timerBar.style.transform = 'scaleX(1)';
+      // Trigger reflow
+      void timerBar.offsetWidth;
+      timerBar.style.transition = `transform ${IDLE_TIMEOUT_MS}ms linear`;
+      timerBar.style.transform = 'scaleX(0)';
+
+      // Reset idle timer
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(showScreensaver, IDLE_TIMEOUT_MS);
+    }
+
+    // ─── WebSocket connection ─────────────────────────────────────────────────
+    function connectWebSocket() {
+      const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${location.host}?client=display`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.addEventListener('open', () => {
+        console.log('[WS] Connected to server');
+      });
+
+      ws.addEventListener('message', (event) => {
+        try {
+          const { event: evtName, payload } = JSON.parse(event.data);
+          console.log('[WS] Event:', evtName, payload);
+
+          if (evtName === 'new_photo_ready') {
+            showPhotoReveal(payload.imageUrl, payload.qrUrl);
+          } else if (evtName === 'show_screensaver') {
+            showScreensaver();
+          }
+        } catch (err) {
+          console.error('[WS] Parse error:', err);
+        }
+      });
+
+      ws.addEventListener('close', () => {
+        console.log('[WS] Disconnected — reconnecting in 3s...');
+        setTimeout(connectWebSocket, 3000);
+      });
+
+      ws.addEventListener('error', (err) => {
+        console.error('[WS] Error:', err);
+      });
+    }
+
+    connectWebSocket();
+
+    // ─── Particle system ─────────────────────────────────────────────────────
+    (function initParticles() {
+      const container = document.getElementById('particles');
+      const count = 40;
+
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+
+        const size = Math.random() * 5 + 2;
+        const left = Math.random() * 100;
+        const duration = Math.random() * 15 + 10;
+        const delay = Math.random() * 15;
+
+        p.style.cssText = `
+          width: ${size}px;
+          height: ${size}px;
+          left: ${left}%;
+          bottom: -20px;
+          animation-duration: ${duration}s;
+          animation-delay: ${delay}s;
+          opacity: 0;
+        `;
+        container.appendChild(p);
+      }
+    })();
+
+    // ─── Light streaks ────────────────────────────────────────────────────────
+    (function initStreaks() {
+      const container = document.getElementById('streaks');
+      const count = 12;
+
+      for (let i = 0; i < count; i++) {
+        const s = document.createElement('div');
+        s.className = 'streak';
+
+        const left = Math.random() * 100;
+        const height = Math.random() * 300 + 100;
+        const duration = Math.random() * 8 + 5;
+        const delay = Math.random() * 10;
+
+        s.style.cssText = `
+          left: ${left}%;
+          height: ${height}px;
+          animation-duration: ${duration}s;
+          animation-delay: ${delay}s;
+        `;
+        container.appendChild(s);
+      }
+    })();
+  </script>
+</body>
+</html>

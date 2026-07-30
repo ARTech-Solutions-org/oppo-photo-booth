@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>OPPO Photobooth — Capture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --oppo-green: #1AAE55;
+      --oppo-green-dark: #137a3d;
+      --oppo-green-light: #22d469;
+      --oppo-green-glow: rgba(26, 174, 85, 0.4);
+      --bg-dark: #080a0a;
+      --text-light: #ffffff;
+      --text-muted: rgba(255,255,255,0.6);
+      --glass: rgba(255,255,255,0.06);
+      --glass-border: rgba(255,255,255,0.12);
+      --radius: 20px;
+      --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg-dark);
+      color: var(--text-light);
+      font-family: 'Poppins', sans-serif;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── App Shell ─────────────────────────────────────────── */
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* ── Camera Feed ───────────────────────────────────────── */
+    #camera-feed {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror for selfie feel */
+      transition: opacity var(--transition);
+    }
+
+    /* ── Capture Overlay ───────────────────────────────────── */
+    #capture-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 40px 24px 50px;
+      background: linear-gradient(
+        to bottom,
+        rgba(8,10,10,0.75) 0%,
+        transparent 30%,
+        transparent 60%,
+        rgba(8,10,10,0.85) 100%
+      );
+      transition: opacity var(--transition);
+    }
+
+    /* ── Header ────────────────────────────────────────────── */
+    .capture-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      opacity: 0;
+      animation: slideDown 0.6s ease 0.3s forwards;
+    }
+
+    .capture-header img {
+      height: 28px;
+      filter: brightness(0) invert(1);
+    }
+
+    .header-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--glass-border);
+    }
+
+    .capture-tagline {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ── Viewfinder Frame ──────────────────────────────────── */
+    .viewfinder {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(80vw, 320px);
+      height: min(80vw, 320px);
+      pointer-events: none;
+    }
+
+    .viewfinder-corner {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-color: var(--oppo-green);
+      border-style: solid;
+      opacity: 0.8;
+    }
+
+    .viewfinder-corner.tl { top: 0; left: 0; border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
+    .viewfinder-corner.tr { top: 0; right: 0; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
+    .viewfinder-corner.bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
+    .viewfinder-corner.br { bottom: 0; right: 0; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
+
+    /* ── Bottom Controls ───────────────────────────────────── */
+    .capture-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: 100%;
+      opacity: 0;
+      animation: slideUp 0.6s ease 0.4s forwards;
+    }
+
+    .capture-hint {
+      font-size: 13px;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Shutter Button ────────────────────────────────────── */
+    .shutter-wrap {
+      position: relative;
+      width: 90px;
+      height: 90px;
+    }
+
+    #shutter-btn {
+      position: relative;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      background: transparent;
+      z-index: 2;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+
+    .shutter-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      background: var(--text-light);
+      transition: transform 0.15s ease, background 0.15s ease;
+      box-shadow: 0 0 20px rgba(255,255,255,0.3);
+    }
+
+    #shutter-btn:active .shutter-inner {
+      transform: translate(-50%, -50%) scale(0.88);
+      background: #e0e0e0;
+    }
+
+    /* Outer ring */
+    .shutter-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.6);
+    }
+
+    /* Pulsing glow ring animation */
+    .shutter-pulse {
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 2px solid var(--oppo-green);
+      animation: shutterPulse 2s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .shutter-pulse:nth-child(2) { animation-delay: 0.7s; }
+
+    @keyframes shutterPulse {
+      0% { opacity: 0.9; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.5); }
+    }
+
+    /* ── Screens ───────────────────────────────────────────── */
+    .screen { position: absolute; inset: 0; transition: opacity var(--transition), visibility var(--transition); }
+    .screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .screen.visible { opacity: 1; visibility: visible; pointer-events: all; }
+
+    /* ── Preview Screen ────────────────────────────────────── */
+    #preview-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 50px 24px;
+      background: var(--bg-dark);
+    }
+
+    #preview-canvas {
+      width: 100%;
+      max-width: 420px;
+      max-height: 60dvh;
+      border-radius: var(--radius);
+      object-fit: cover;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--glass-border);
+    }
+
+    .preview-header {
+      text-align: center;
+    }
+
+    .preview-header h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .preview-header p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .preview-actions {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 16px 0;
+      border-radius: 50px;
+      font-family: 'Poppins', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      outline: none;
+    }
+
+    .btn:active { transform: scale(0.96); }
+
+    .btn-retake {
+      background: var(--glass);
+      color: var(--text-light);
+      border: 1px solid var(--glass-border);
+    }
+
+    .btn-retake:hover { background: rgba(255,255,255,0.12); }
+
+    .btn-confirm {
+      background: linear-gradient(135deg, var(--oppo-green), var(--oppo-green-dark));
+      color: #fff;
+      box-shadow: 0 8px 24px var(--oppo-green-glow);
+    }
+
+    .btn-confirm:hover {
+      box-shadow: 0 12px 30px rgba(26,174,85,0.55);
+      transform: translateY(-1px);
+    }
+
+    /* ── Processing Screen ─────────────────────────────────── */
+    #processing-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      background: var(--bg-dark);
+      text-align: center;
+      padding: 40px 32px;
+    }
+
+    .processing-logo {
+      height: 36px;
+      filter: brightness(0) invert(1);
+      opacity: 0.9;
+    }
+
+    .processing-orb {
+      position: relative;
+      width: 120px;
+      height: 120px;
+    }
+
+    .orb-core {
+      position: absolute;
+      inset: 20px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--oppo-green-light), var(--oppo-green-dark));
+      animation: orbPulse 1.5s ease-in-out infinite;
+      box-shadow: 0 0 40px var(--oppo-green-glow);
+    }
+
+    .orb-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid var(--oppo-green);
+      animation: orbSpin 2s linear infinite;
+      border-top-color: transparent;
+    }
+
+    .orb-ring-2 {
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 1px solid var(--oppo-green-light);
+      animation: orbSpin 3s linear infinite reverse;
+      border-right-color: transparent;
+    }
+
+    @keyframes orbPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    @keyframes orbSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .processing-text h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .processing-text p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .processing-text .highlight {
+      color: var(--oppo-green);
+      font-weight: 500;
+    }
+
+    .processing-dots {
+      display: inline-flex;
+      gap: 6px;
+      margin-top: 16px;
+    }
+
+    .processing-dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--oppo-green);
+      animation: dotBounce 1.4s ease-in-out infinite;
+    }
+
+    .processing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .processing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotBounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* ── Animations ────────────────────────────────────────── */
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Status Toast ──────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease;
+      opacity: 0;
+      z-index: 999;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* ── Camera permission error ───────────────────────────── */
+    #camera-error {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 40px;
+      text-align: center;
+      background: var(--bg-dark);
+    }
+
+    #camera-error.hidden { display: none; }
+
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+
+    #camera-error h2 { font-size: 20px; font-weight: 600; }
+    #camera-error p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+    #camera-error .btn-confirm {
+      margin-top: 8px;
+      padding: 14px 32px;
+      flex: none;
+      width: auto;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- ── Camera Screen ─────────────────────────────────── -->
+    <div id="camera-screen" class="screen visible">
+      <video id="camera-feed" autoplay playsinline muted></video>
+
+      <div id="capture-overlay">
+        <!-- Header -->
+        <div class="capture-header">
+          <img src="/assets/logo/oppo-logo.png" alt="OPPO" />
+          <div class="header-divider"></div>
+          <span class="capture-tagline">Photobooth</span>
+        </div>
+
+        <!-- Viewfinder -->
+        <div class="viewfinder">
+          <div class="viewfinder-corner tl"></div>
+          <div class="viewfinder-corner tr"></div>
+          <div class="viewfinder-corner bl"></div>
+          <div class="viewfinder-corner br"></div>
+        </div>
+
+        <!-- Shutter Button -->
+        <div class="capture-controls">
+          <span class="capture-hint">Tap to capture your moment</span>
+          <div class="shutter-wrap">
+            <div class="shutter-pulse"></div>
+            <div class="shutter-pulse"></div>
+            <button id="shutter-btn" aria-label="Capture photo">
+              <div class="shutter-ring"></div>
+              <div class="shutter-inner"></div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera error fallback -->
+      <div id="camera-error" class="hidden">
+        <div class="error-icon">📷</div>
+        <h2>Camera Access Required</h2>
+        <p>Please allow camera access in your browser settings, then reload the page.</p>
+        <button class="btn btn-confirm" onclick="startCamera()">Try Again</button>
+      </div>
+    </div>
+
+    <!-- ── Preview Screen ────────────────────────────────── -->
+    <div id="preview-screen" class="screen hidden">
+      <div class="preview-header">
+        <h2>Looking good? ✨</h2>
+        <p>Review your photo before sending to the big screen</p>
+      </div>
+
+      <canvas id="preview-canvas"></canvas>
+
+      <div class="preview-actions">
+        <button class="btn btn-retake" id="retake-btn">↺ Retake</button>
+        <button class="btn btn-confirm" id="confirm-btn">Send ✓</button>
+      </div>
+    </div>
+
+    <!-- ── Processing Screen ─────────────────────────────── -->
+    <div id="processing-screen" class="screen hidden">
+      <img src="/assets/logo/oppo-logo.png" alt="OPPO" class="processing-logo" />
+
+      <div class="processing-orb">
+        <div class="orb-ring"></div>
+        <div class="orb-ring-2"></div>
+        <div class="orb-core"></div>
+      </div>
+
+      <div class="processing-text">
+        <h2>Working Magic ✨</h2>
+        <p>Your photo is being processed<br />
+           with <span class="highlight">OPPO AI</span> enhancement.<br />
+           Check the <span class="highlight">big screen!</span></p>
+        <div class="processing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast"></div>
+
+  <script>
+    // ── State ─────────────────────────────────────────────────────────────────
+    let stream = null;
+    let capturedBlob = null;
+
+    const videoEl = document.getElementById('camera-feed');
+    const canvas = document.getElementById('preview-canvas');
+    const ctx = canvas.getContext('2d');
+
+    const screens = {
+      camera: document.getElementById('camera-screen'),
+      preview: document.getElementById('preview-screen'),
+      processing: document.getElementById('processing-screen'),
+    };
+
+    // ── Screen management ──────────────────────────────────────────────────────
+    function showScreen(name) {
+      Object.entries(screens).forEach(([key, el]) => {
+        if (key === name) {
+          el.classList.remove('hidden');
+          el.classList.add('visible');
+        } else {
+          el.classList.remove('visible');
+          el.classList.add('hidden');
+        }
+      });
+    }
+
+    // ── Camera ─────────────────────────────────────────────────────────────────
+    async function startCamera() {
+      const errorEl = document.getElementById('camera-error');
+      errorEl.classList.add('hidden');
+
+      try {
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+
+        videoEl.srcObject = stream;
+        showScreen('camera');
+      } catch (err) {
+        console.error('Camera error:', err);
+        errorEl.classList.remove('hidden');
+      }
+    }
+
+    // ── Capture ────────────────────────────────────────────────────────────────
+    document.getElementById('shutter-btn').addEventListener('click', () => {
+      if (!stream) return;
+
+      const vw = videoEl.videoWidth;
+      const vh = videoEl.videoHeight;
+
+      if (!vw || !vh) {
+        showToast('Camera not ready yet…');
+        return;
+      }
+
+      // Draw mirrored frame to canvas
+      canvas.width = vw;
+      canvas.height = vh;
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(videoEl, -vw, 0, vw, vh);
+      ctx.restore();
+
+      // Convert to blob for upload
+      canvas.toBlob((blob) => {
+        capturedBlob = blob;
+        showScreen('preview');
+      }, 'image/jpeg', 0.92);
+    });
+
+    // ── Retake ─────────────────────────────────────────────────────────────────
+    document.getElementById('retake-btn').addEventListener('click', () => {
+      capturedBlob = null;
+      showScreen('camera');
+    });
+
+    // ── Confirm & Upload ───────────────────────────────────────────────────────
+    document.getElementById('confirm-btn').addEventListener('click', async () => {
+      if (!capturedBlob) return;
+
+      showScreen('processing');
+
+      try {
+        const formData = new FormData();
+        formData.append('photo', capturedBlob, 'capture.jpg');
+
+        const res = await fetch('/api/capture', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+
+        // After 4 seconds, go back to camera for the next guest
+        setTimeout(() => {
+          capturedBlob = null;
+          showScreen('camera');
+        }, 4000);
+
+      } catch (err) {
+        console.error('Upload error:', err);
+        showToast('Upload failed. Please try again.');
+        showScreen('preview');
+      }
+    });
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    startCamera();
+  </script>
+</body>
+</html>

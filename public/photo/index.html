@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download Your OPPO Photo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #1AAE55;
+      --green-dark: #137a3d;
+      --green-light: #22d469;
+      --green-glow: rgba(26, 174, 85, 0.4);
+      --bg: #080a08;
+      --glass: rgba(255,255,255,0.05);
+      --glass-border: rgba(255,255,255,0.1);
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: #fff;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    /* Animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 600px 600px at 50% 0%, rgba(26,174,85,0.15) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px 60px;
+      gap: 32px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      animation: fadeInDown 0.6s ease both;
+    }
+
+    .header img {
+      height: 32px;
+      filter: brightness(0) invert(1);
+    }
+
+    .header-divider {
+      width: 40px;
+      height: 2px;
+      background: linear-gradient(to right, transparent, var(--green), transparent);
+      margin: 4px 0;
+    }
+
+    .header-subtitle {
+      font-size: 13px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Photo card */
+    .photo-card {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(26,174,85,0.2),
+        0 24px 60px rgba(0,0,0,0.5),
+        0 0 60px rgba(26,174,85,0.06);
+      animation: photoReveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+    }
+
+    .photo-card img {
+      width: 100%;
+      display: block;
+    }
+
+    /* AI badge on photo */
+    .photo-badge {
+      padding: 16px 20px;
+      background: linear-gradient(to right, rgba(26,174,85,0.1), var(--glass));
+      border-top: 1px solid rgba(26,174,85,0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+      animation: dotPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { box-shadow: 0 0 0 0 var(--green-glow); }
+      50% { box-shadow: 0 0 0 5px transparent; }
+    }
+
+    .badge-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--green-light);
+    }
+
+    .badge-time {
+      margin-left: auto;
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+    }
+
+    /* CTA section */
+    .cta-section {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      animation: fadeInUp 0.6s ease 0.4s both;
+    }
+
+    .cta-heading {
+      font-size: 20px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .cta-sub {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    /* Download button */
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 18px 0;
+      border-radius: 100px;
+      background: linear-gradient(135deg, var(--green), var(--green-dark));
+      color: #fff;
+      font-family: 'Poppins', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 30px var(--green-glow);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-download:active {
+      transform: scale(0.97);
+      box-shadow: 0 4px 15px var(--green-glow);
+    }
+
+    .btn-download svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Share hint */
+    .share-hint {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 16px 20px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+      line-height: 1.5;
+    }
+
+    .share-hint-icon { font-size: 22px; flex-shrink: 0; }
+
+    /* Footer */
+    .footer {
+      margin-top: auto;
+      padding-top: 20px;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,0.2);
+    }
+
+    .footer span {
+      color: var(--green);
+      opacity: 0.7;
+    }
+
+    /* Animations */
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes photoReveal {
+      from { opacity: 0; transform: scale(0.95); filter: blur(6px); }
+      to { opacity: 1; transform: scale(1); filter: blur(0); }
+    }
+
+    /* Long-press hint for iOS */
+    .ios-hint {
+      display: none;
+      font-size: 12px;
+      color: rgba(255,255,255,0.35);
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <!-- Header -->
+    <div class="header">
+      <img src="/assets/logo/oppo-logo.png" alt="OPPO" />
+      <div class="header-divider"></div>
+      <span class="header-subtitle">AI Photobooth</span>
+    </div>
+
+    <!-- Photo Card -->
+    <div class="photo-card">
+      <img src="{{IMAGE_URL}}" alt="Your OPPO AI-enhanced photo" id="photo-img" crossorigin="anonymous" />
+      <div class="photo-badge">
+        <div class="badge-dot"></div>
+        <span class="badge-text">OPPO AI Enhanced</span>
+        <span class="badge-time">{{TIMESTAMP}}</span>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta-section">
+      <h1 class="cta-heading">Your photo is ready! 🎉</h1>
+      <p class="cta-sub">Save it to your camera roll and share your moment.</p>
+
+      <a id="download-btn" class="btn-download" href="{{IMAGE_URL}}" download="oppo-photobooth-{{PHOTO_ID}}.jpg">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-8m0 8l-3-3m3 3l3-3M5 20h14" />
+        </svg>
+        Save to my phone
+      </a>
+
+      <p class="ios-hint" id="ios-hint">
+        📱 On iPhone: tap &amp; hold the photo above, then tap <strong>"Save to Photos"</strong>
+      </p>
+
+      <div class="share-hint">
+        <span class="share-hint-icon">💡</span>
+        <span>If the download doesn't start, tap and hold the photo and choose "Save Image".</span>
+      </div>
+    </div>
+
+    <div class="footer">Taken at the <span>OPPO</span> Experience Event</div>
+  </div>
+
+  <script>
+    // Detect iOS — download attribute doesn't work on Safari/iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      document.getElementById('ios-hint').style.display = 'block';
+      // On iOS, redirect download link to open image directly (user can long-press to save)
+      const btn = document.getElementById('download-btn');
+      btn.removeAttribute('download');
+    }
+  </script>
+</body>
+</html>
