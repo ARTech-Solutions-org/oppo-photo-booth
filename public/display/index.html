@@ -741,6 +741,33 @@
     // Start polling every 1.5s for seamless Vercel sync
     setInterval(pollLatestPhoto, 1500);
 
+    // ─── Instant Cloud Sync via EventSource (100% Free, Zero Setup) ──────────
+    function connectNtfyCloudSync() {
+      const room = new URLSearchParams(location.search).get('room') || 'default';
+      const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}/json`;
+
+      try {
+        const es = new EventSource(ntfyUrl);
+        es.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.message) {
+              const msg = JSON.parse(data.message);
+              if (msg.event === 'new_photo_ready' && msg.payload) {
+                if (msg.payload.id !== lastDisplayedPhotoId) {
+                  lastDisplayedPhotoId = msg.payload.id;
+                  console.log('[ntfy Cloud Sync] Instant photo received:', msg.payload.id);
+                  showPhotoReveal(msg.payload.imageUrl, msg.payload.qrUrl);
+                }
+              }
+            }
+          } catch (err) {}
+        };
+      } catch (e) {}
+    }
+
+    connectNtfyCloudSync();
+
     // ─── Particle system ─────────────────────────────────────────────────────
     (function initParticles() {
       const container = document.getElementById('particles');
