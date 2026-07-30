@@ -25,7 +25,10 @@ const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
 const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// Removed jsonblob sync
+// Global shared cloud sync URL (100% free, 0 setup, connects Vercel instances)
+const CLOUD_SYNC_URL = 'https://jsonblob.com/api/jsonBlob/019fb286-8176-7aa3-adc7-6f6b7b1d7b43';
+
+// Memory Storage fallback
 const sessionsMap = new Map();
 let latestSession = null;
 
@@ -68,18 +71,28 @@ async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
   return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 }
 
+/**
+ * Sync latest photo metadata to cloud sync endpoint for Vercel display
+ */
+async function syncToCloud(payload) {
+  try {
+    await fetch(CLOUD_SYNC_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log('[Cloud Sync] ✓ Latest photo synced to cloud!');
+  } catch (e) {
+    console.warn('[Cloud Sync] Notice:', e.message);
+  }
+}
+
 // ─── Express App ─────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
-const UPLOADS_DIR = path.join(__dirname, '../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/assets/logo', express.static(path.join(__dirname, '../public/assets/logo')));
-app.use('/uploads', express.static(UPLOADS_DIR));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -95,10 +108,8 @@ const certPath = path.join(CERT_DIR, 'cert.pem');
 if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
   const sslOptions = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
   server = https.createServer(sslOptions, app);
-  console.log('[Server] 🔒 Running in HTTPS mode');
 } else {
   server = http.createServer(app);
-  console.log('[Server] 🌐 Running in HTTP mode');
 }
 
 // Local WebSockets
@@ -107,28 +118,16 @@ try {
   const wss = new WebSocket.Server({ server });
   wss.on('connection', (ws, req) => {
     const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
-    if (clientType === 'display') {
-      displayClients.add(ws);
-      console.log(`[WS] 🟢 Display connected! Active display clients: ${displayClients.size}`);
-    }
-    ws.on('close', () => {
-      displayClients.delete(ws);
-      console.log(`[WS] 🔴 Display disconnected. Active display clients: ${displayClients.size}`);
-    });
-    ws.on('error', (err) => {
-      displayClients.delete(ws);
-      console.log('[WS] Error:', err.message);
-    });
+    if (clientType === 'display') displayClients.add(ws);
+    ws.on('close', () => displayClients.delete(ws));
+    ws.on('error', () => displayClients.delete(ws));
   });
 } catch (e) {}
 
 function broadcastToDisplays(event, payload) {
   const message = JSON.stringify({ event, payload });
-  console.log(`[WS] 📡 Broadcasting '${event}' to ${displayClients.size} display client(s)...`);
   for (const client of displayClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
+    if (client.readyState === WebSocket.OPEN) client.send(message);
   }
 }
 
@@ -144,6 +143,18 @@ app.get('/api/config', (req, res) => {
 });
 
 app.get('/api/latest', async (req, res) => {
+  // Try cloud sync endpoint first for multi-instance Vercel sync
+  try {
+    const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
+    if (cloudRes.ok) {
+      const cloudData = await cloudRes.json();
+      if (cloudData && cloudData.id) {
+        return res.json(cloudData);
+      }
+    }
+  } catch (e) {}
+
+  // Local fallback
   if (!latestSession) return res.json({ id: null });
   res.json({
     id: latestSession.id,
@@ -175,16 +186,8 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
     // Process image (or pass-through if no API key)
     const processedBuffer = await processImage(imageBuffer, mimeType);
 
-    // Image storage logic: local disk when running locally, Catbox when on Vercel
-    let directImageUrl;
-    if (!process.env.VERCEL) {
-      const filename = `${id}.jpg`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, filename), processedBuffer);
-      directImageUrl = `${dynamicBaseUrl}/uploads/${filename}`;
-      console.log(`[Local Storage] ✓ Saved photo to local disk: /uploads/${filename}`);
-    } else {
-      directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
-    }
+    // Direct cloud image URL
+    const directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
 
     const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
     const qrUrl = await generateQRCode(photoPageUrl);
@@ -200,7 +203,9 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 
     setSession(sessionData);
 
-    // Using ntfy for instant display sync
+    // Sync to cloud for Vercel Display screen
+    await syncToCloud(sessionData);
+
     // Sync directly to ntfy.sh for instant display update on Vercel
     const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}`;
     try {
@@ -226,6 +231,16 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 app.get('/photo/:id', async (req, res) => {
   const { id } = req.params;
   let session = getSession(id);
+
+  if (!session) {
+    try {
+      const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData && cloudData.id === id) session = cloudData;
+      }
+    } catch (e) {}
+  }
 
   if (!session || (session.status && session.status !== 'ready')) {
     return res.status(404).send(`
@@ -265,7 +280,7 @@ if (require.main === module) {
     console.log('╔══════════════════════════════════════════════════════════╗');
     console.log('║    🟢  OPPO PHOTOBOOTH SERVER (VERCEL READY) STARTED 🟢  ║');
     console.log('╠══════════════════════════════════════════════════════════╣');
-    console.log(`║  Display Screen :  https://localhost:${PORT}/display        ║`);
+    console.log(`║  Display Screen :  https://localhost:${PORT}/display         ║`);
     console.log(`║  Mobile Capture :  https://${localIP}:${PORT}/capture   ║`);
     console.log('╚══════════════════════════════════════════════════════════╝');
     console.log('');
