@@ -11,7 +11,7 @@ timeout /t 1 /nobreak >nul
 
 echo.
 echo  =====================================================
-echo   OPPO PHOTOBOOTH - Starting Server...
+echo   OPPO PHOTOBOOTH - Starting Local Server...
 echo  =====================================================
 echo.
 
@@ -24,29 +24,28 @@ timeout /t 2 /nobreak >nul
 :: Detect local IP
 for /f "tokens=*" %%i in ('node -e "const os=require('os');const ifaces=os.networkInterfaces();let ip='localhost';for(const n of Object.keys(ifaces)){for(const i of ifaces[n]){if(i.family==='IPv4'&&!i.internal&&i.address.startsWith('10.')){ip=i.address;break;}}}console.log(ip);"') do set LOCAL_IP=%%i
 
-:: Generate a simple test room ID
-set ROOM_ID=oppo_test_01
-
 echo.
 echo  =====================================================
-echo   LINKS FOR TESTING (ROOM: %ROOM_ID%)
+echo   LOCAL LINKS:
 echo  =====================================================
 echo.
 echo   [1] Display Screen (Open on PC):
-echo       https://localhost:3443/display?room=%ROOM_ID%
+echo       https://localhost:3000/display
+echo       (or https://%LOCAL_IP%:3000/display)
 echo.
 echo   [2] Mobile Capture (Open on Phone):
-echo       https://%LOCAL_IP%:3443/capture?room=%ROOM_ID%
+echo       https://%LOCAL_IP%:3000/capture
 echo.
 echo  =====================================================
-echo   IMPORTANT:
-echo   - If the browser shows a security warning, click
-echo     "Advanced" -^> "Proceed to site".
-echo   - Allow Camera permissions on the phone!
+echo   IMPORTANT ON PHONE:
+echo   - Open the Mobile Capture link on your phone.
+echo   - If you see a security warning, tap "Advanced" then "Proceed".
+echo   - Allow Camera permission!
 echo  =====================================================
 echo.
 
 :: Open Display screen in default browser
-start "" "https://localhost:3443/display?room=%ROOM_ID%"
+start "" "https://localhost:3000/display"
 
 pause
+

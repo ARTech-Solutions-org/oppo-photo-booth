@@ -72,8 +72,14 @@ async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
+const UPLOADS_DIR = path.join(__dirname, '../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/assets/logo', express.static(path.join(__dirname, '../public/assets/logo')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -155,8 +161,16 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
     // Process image (or pass-through if no API key)
     const processedBuffer = await processImage(imageBuffer, mimeType);
 
-    // Direct cloud image URL
-    const directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
+    // Image storage logic: local disk when running locally, Catbox when on Vercel
+    let directImageUrl;
+    if (!process.env.VERCEL) {
+      const filename = `${id}.jpg`;
+      fs.writeFileSync(path.join(UPLOADS_DIR, filename), processedBuffer);
+      directImageUrl = `${dynamicBaseUrl}/uploads/${filename}`;
+      console.log(`[Local Storage] ✓ Saved photo to local disk: /uploads/${filename}`);
+    } else {
+      directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
+    }
 
     const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
     const qrUrl = await generateQRCode(photoPageUrl);
