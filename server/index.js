@@ -43,27 +43,27 @@ function getSession(id) {
 }
 
 /**
- * Upload photo buffer to free direct cloud storage (tmpfiles.org)
+ * Upload photo buffer to free direct cloud storage (Catbox.moe)
  */
 async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
   try {
     const form = new FormData();
+    form.append('reqtype', 'fileupload');
     const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
-    form.append('file', blob, filename);
+    form.append('fileToUpload', blob, filename);
 
-    const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+    const res = await fetch('https://catbox.moe/user/api.php', {
       method: 'POST',
       body: form,
     });
 
-    const data = await res.json();
-    if (data && data.status === 'success' && data.data && data.data.url) {
-      const directUrl = data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-      console.log('[Cloud Storage] ✓ Uploaded to direct URL:', directUrl);
-      return directUrl;
+    const url = (await res.text()).trim();
+    if (url && url.startsWith('http')) {
+      console.log('[Cloud Storage] ✓ Uploaded to direct URL:', url);
+      return url;
     }
   } catch (e) {
-    console.warn('[Cloud Storage] Upload notice:', e.message);
+    console.warn('[Cloud Storage] Catbox upload notice:', e.message);
   }
   return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 }
