@@ -782,8 +782,8 @@
       }
     }
 
-    // Start polling every 1.5s for seamless Vercel sync
-    setInterval(pollLatestPhoto, 1500);
+    // Run initial poll once on load
+    pollLatestPhoto();
 
     // ─── Instant Cloud Sync via EventSource (100% Free, Zero Setup) ──────────
     function connectNtfyCloudSync() {
