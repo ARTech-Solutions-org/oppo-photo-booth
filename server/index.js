@@ -1,8 +1,8 @@
 /**
  * server/index.js
  * Express server for OPPO Photobooth.
- * Vercel-ready with instant Catbox.moe direct image hosting + ntfy.sh realtime cloud sync.
- * 100% FREE, 0-Setup, instant sync between Mobile and Display on Vercel.
+ * Vercel-ready with zero-disk storage (Catbox.moe) + 100% Free Cloud State Sync (jsonblob.com).
+ * Works instantly on Vercel & Localhost without requiring any API keys or databases!
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
@@ -25,7 +25,10 @@ const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
 const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// In-Memory Session Store
+// Global shared cloud sync URL (100% free, 0 setup, connects Vercel instances)
+const CLOUD_SYNC_URL = 'https://jsonblob.com/api/jsonBlob/019fb286-8176-7aa3-adc7-6f6b7b1d7b43';
+
+// Memory Storage fallback
 const sessionsMap = new Map();
 let latestSession = null;
 
@@ -43,7 +46,7 @@ function getSession(id) {
 }
 
 /**
- * Upload image buffer to free direct image host (catbox.moe)
+ * Upload photo buffer to free direct cloud storage (Catbox.moe)
  */
 async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
   try {
@@ -63,10 +66,25 @@ async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
       return url;
     }
   } catch (e) {
-    console.warn('[Cloud Storage] Catbox upload failed:', e.message);
+    console.warn('[Cloud Storage] Catbox upload notice:', e.message);
   }
-  // Fallback to base64 if cloud host fails
   return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+}
+
+/**
+ * Sync latest photo metadata to cloud sync endpoint for Vercel display
+ */
+async function syncToCloud(payload) {
+  try {
+    await fetch(CLOUD_SYNC_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log('[Cloud Sync] ✓ Latest photo synced to cloud!');
+  } catch (e) {
+    console.warn('[Cloud Sync] Notice:', e.message);
+  }
 }
 
 // ─── Express App ─────────────────────────────────────────────────────────────
@@ -124,18 +142,25 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-app.get('/api/latest', (req, res) => {
-  const room = (req.query.room || 'default').toLowerCase().trim();
-  const roomSession = Array.from(sessionsMap.values()).reverse().find(s => s.room === room && s.status === 'ready');
-  const session = roomSession || latestSession;
+app.get('/api/latest', async (req, res) => {
+  // Try cloud sync endpoint first for multi-instance Vercel sync
+  try {
+    const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
+    if (cloudRes.ok) {
+      const cloudData = await cloudRes.json();
+      if (cloudData && cloudData.id) {
+        return res.json(cloudData);
+      }
+    }
+  } catch (e) {}
 
-  if (!session) return res.json({ id: null });
-
+  // Local fallback
+  if (!latestSession) return res.json({ id: null });
   res.json({
-    id: session.id,
-    imageUrl: session.imageUrl,
-    qrUrl: session.qrUrl,
-    timestamp: session.timestamp,
+    id: latestSession.id,
+    imageUrl: latestSession.imageUrl,
+    qrUrl: latestSession.qrUrl,
+    timestamp: latestSession.timestamp,
   });
 });
 
@@ -146,19 +171,20 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file received.' });
 
   const id = uuidv4();
-  const room = (req.query.room || req.body.room || 'default').toLowerCase().trim();
   const mimeType = req.file.mimetype || 'image/jpeg';
   const host = req.get('host');
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const dynamicBaseUrl = `${protocol}://${host}`;
 
-  console.log(`[Capture] New photo — ID: ${id} | Room: ${room}`);
+  console.log(`[Capture] New photo received — ID: ${id}`);
 
   try {
     const imageBuffer = req.file.buffer;
+
+    // Process image (or pass-through if no API key)
     const processedBuffer = await processImage(imageBuffer, mimeType);
 
-    // Upload to direct free cloud URL so it's lightweight and works across Vercel Lambdas
+    // Direct cloud image URL
     const directImageUrl = await uploadToFreeHost(processedBuffer, `${id}.jpg`);
 
     const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
@@ -171,46 +197,38 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
       imageUrl: directImageUrl,
       photoPageUrl,
       qrUrl,
-      room,
     };
 
     setSession(sessionData);
 
-    console.log(`[Capture] 🎉 Photo ready! Syncing to room "${room}"...`);
+    // Sync to cloud for Vercel Display screen
+    await syncToCloud(sessionData);
 
-    // 1. Broadcast local WebSockets
+    // Local WebSocket broadcast
     broadcastToDisplays('new_photo_ready', { id, imageUrl: directImageUrl, qrUrl });
 
-    // 2. Broadcast via ntfy.sh (Instant cloud sync for Vercel)
-    try {
-      await fetch(`https://ntfy.sh/oppo_booth_${room}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event: 'new_photo_ready',
-          payload: { id, imageUrl: directImageUrl, qrUrl },
-        }),
-      });
-      console.log(`[ntfy] ✓ Instant cloud sync sent to "oppo_booth_${room}"`);
-    } catch (nErr) {
-      console.warn('[ntfy] Cloud sync warning:', nErr.message);
-    }
-
-    // Return response to mobile client AFTER sync is complete
     res.json({ id, status: 'ready', imageUrl: directImageUrl, qrUrl });
-
   } catch (err) {
     console.error('[Capture] Processing error:', err.message || err);
-    broadcastToDisplays('processing_error', { id, message: err.message });
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/photo/:id', (req, res) => {
+app.get('/photo/:id', async (req, res) => {
   const { id } = req.params;
-  const session = getSession(id);
+  let session = getSession(id);
 
-  if (!session || session.status !== 'ready') {
+  if (!session) {
+    try {
+      const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData && cloudData.id === id) session = cloudData;
+      }
+    } catch (e) {}
+  }
+
+  if (!session || (session.status && session.status !== 'ready')) {
     return res.status(404).send(`
       <!DOCTYPE html>
       <html>
