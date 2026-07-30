@@ -1,6 +1,6 @@
 /**
  * ai-processor.js
- * Dynamic AI Photo Processor supporting Google Gemini and OpenAI (ChatGPT / DALL-E 3).
+ * Dynamic AI Photo Processor supporting Google Gemini and OpenAI (ChatGPT / DALL-E).
  * Generates an OPPO-themed AI portrait of the guest inside a futuristic OPPO branded environment.
  */
 
@@ -43,7 +43,7 @@ async function processImage(imageBuffer, mimeType = 'image/jpeg') {
 }
 
 /**
- * Process photo using OpenAI (ChatGPT Vision + DALL-E 3).
+ * Process photo using OpenAI (ChatGPT Vision + DALL-E 3 / DALL-E 2).
  */
 async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
   if (!apiKey || apiKey === 'your_openai_api_key_here') {
@@ -55,9 +55,8 @@ async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
     const openai = new OpenAI({ apiKey });
     const base64Image = imageBuffer.toString('base64');
 
-    console.log('[OpenAI] Step 1/2: Analyzing photo features with ChatGPT Vision (gpt-4o-mini)...');
+    console.log('[OpenAI] Step 1/2: Analyzing photo features with ChatGPT Vision...');
 
-    // Step 1: Analyze user photo with GPT-4o-mini to get detailed description
     let subjectDescription = 'A stylish guest posing for OPPO photobooth';
     try {
       const visionRes = await openai.chat.completions.create({
@@ -68,7 +67,7 @@ async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
             content: [
               {
                 type: 'text',
-                text: 'Describe the person in this photo concisely (perceived gender, hair style/color, clothing style, pose, facial expression) in under 30 words so I can place them in a stylized photobooth scene.',
+                text: 'Describe the person in this photo concisely (perceived gender, hair style/color, clothing style, pose) in under 25 words.',
               },
               {
                 type: 'image_url',
@@ -79,7 +78,7 @@ async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
             ],
           },
         ],
-        max_tokens: 100,
+        max_tokens: 80,
       });
 
       const desc = visionRes.choices?.[0]?.message?.content;
@@ -88,34 +87,47 @@ async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
         console.log(`[OpenAI] ✓ Vision Analysis: "${subjectDescription}"`);
       }
     } catch (vErr) {
-      console.warn('[OpenAI] Note: Vision analysis skipped or quota limited:', vErr.message || vErr);
+      console.warn('[OpenAI] Note: Vision step skipped:', vErr.message || vErr);
     }
 
-    // Step 2: Generate futuristic OPPO environment portrait with DALL-E 3
-    console.log('[OpenAI] Step 2/2: Generating OPPO-themed AI environment portrait with DALL-E 3...');
-    
+    // Step 2: Generate futuristic OPPO environment portrait
+    console.log('[OpenAI] Step 2/2: Generating OPPO-themed AI portrait...');
     const dallEPrompt = `A professional photorealistic portrait of ${subjectDescription}, standing inside a futuristic OPPO AI event booth. The background features glowing neon OPPO green lights, sleek futuristic OPPO smartphone displays, Hasselblad camera branding accents, luxury emerald illumination, cinematic depth of field, 8k resolution studio photo.`;
 
-    console.log(`[OpenAI] DALL-E 3 Prompt:\n  "${dallEPrompt}"`);
+    console.log(`[OpenAI] Generation Prompt:\n  "${dallEPrompt}"`);
 
-    const imageRes = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt: dallEPrompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'standard',
-    });
+    // Try dall-e-3 first, fallback to dall-e-2
+    let imageRes = null;
+    let usedModel = 'dall-e-3';
+
+    try {
+      imageRes = await openai.images.generate({
+        model: 'dall-e-3',
+        prompt: dallEPrompt,
+        n: 1,
+        size: '1024x1024',
+      });
+    } catch (d3Err) {
+      console.warn('[OpenAI] dall-e-3 model unavailable for this key, trying dall-e-2 fallback...');
+      usedModel = 'dall-e-2';
+      imageRes = await openai.images.generate({
+        model: 'dall-e-2',
+        prompt: dallEPrompt.substring(0, 950), // dall-e-2 prompt max 1000 chars
+        n: 1,
+        size: '1024x1024',
+      });
+    }
 
     const imageUrl = imageRes.data?.[0]?.url;
     if (imageUrl) {
-      console.log('[OpenAI] Downloading generated image from OpenAI DALL-E 3...');
+      console.log(`[OpenAI] Downloading generated image from ${usedModel}...`);
       const fetchRes = await fetch(imageUrl);
       const arrayBuffer = await fetchRes.arrayBuffer();
-      console.log('[OpenAI] 🎉 SUCCESS! OPPO AI environment photo generated successfully.');
+      console.log(`[OpenAI] 🎉 SUCCESS! OPPO AI environment photo generated with ${usedModel}.`);
       return Buffer.from(arrayBuffer);
     }
 
-    console.warn('[OpenAI] ⚠️ No image URL returned from DALL-E 3 — returning original photo.');
+    console.warn('[OpenAI] ⚠️ No image URL returned — returning original photo.');
     return imageBuffer;
   } catch (err) {
     console.error('[OpenAI] ❌ API ERROR DETAILS:');
@@ -124,7 +136,7 @@ async function processWithOpenAI(imageBuffer, mimeType, apiKey) {
     console.error(`  - Status : ${err.status || 'N/A'}`);
 
     if (err.message && err.message.includes('quota')) {
-      console.error('\n  👉 NOTE: Your OpenAI API key has exceeded its quota/billing limit (Error 429). Please add credits to your OpenAI account at https://platform.openai.com/account/billing');
+      console.error('\n  👉 NOTE: Your OpenAI API key has exceeded its billing quota (Error 429). Please add credits to your OpenAI account at https://platform.openai.com/account/billing');
     }
 
     console.warn('[OpenAI] Returning original photo due to API error.');

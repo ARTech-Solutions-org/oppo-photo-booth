@@ -1,6 +1,8 @@
 /**
  * server/index.js
- * Main Express + WebSocket server for the OPPO Photobooth app.
+ * Express + WebSocket server for OPPO Photobooth.
+ * Vercel-ready: Uses in-memory sessions & Data URLs (No disk storage required).
+ * Supports both WebSockets and HTTP Polling for universal cloud deployment.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
@@ -19,114 +21,89 @@ const { generateQRCode } = require('./qr');
 const { getLocalIP } = require('./ip-helper');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const config = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '../config.json'), 'utf8')
-);
-const PORT = config.port || 3000;
+const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
-const BASE_URL = config.baseUrl || `https://${localIP}:${PORT}`;
-const SESSION_FILE = path.join(__dirname, '../', config.sessionFile || 'server/sessions.json');
-const UPLOAD_DIR = path.join(__dirname, '../', config.uploadDir || 'uploads');
-const ORIGINAL_DIR = path.join(UPLOAD_DIR, 'original');
-const PROCESSED_DIR = path.join(UPLOAD_DIR, 'processed');
+const BASE_URL = process.env.BASE_URL || `https://${localIP}:${PORT}`;
+const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// ─── Ensure directories exist ─────────────────────────────────────────────────
-[ORIGINAL_DIR, PROCESSED_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
+// ─── In-Memory Session Store (Vercel / Cloud compatible, zero disk requirement) ─
+const sessionsMap = new Map();
+let latestSession = null;
 
-// ─── Session store helpers ────────────────────────────────────────────────────
-function readSessions() {
-  try {
-    const raw = fs.readFileSync(SESSION_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return [];
+function setSession(session) {
+  sessionsMap.set(session.id, session);
+  if (session.status === 'ready') {
+    latestSession = session;
   }
-}
 
-function writeSessions(sessions) {
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions, null, 2), 'utf8');
-}
-
-function upsertSession(entry) {
-  const sessions = readSessions();
-  const idx = sessions.findIndex((s) => s.id === entry.id);
-  if (idx >= 0) {
-    sessions[idx] = { ...sessions[idx], ...entry };
-  } else {
-    sessions.push(entry);
+  // Keep memory clean: remove sessions older than 2 hours
+  if (sessionsMap.size > 200) {
+    const oldestKey = sessionsMap.keys().next().value;
+    sessionsMap.delete(oldestKey);
   }
-  writeSessions(sessions);
 }
 
 function getSession(id) {
-  return readSessions().find((s) => s.id === id) || null;
+  return sessionsMap.get(id) || null;
 }
 
 // ─── Express App ─────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 // Serve static public files
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Serve uploaded processed images
-app.use('/uploads', express.static(UPLOAD_DIR));
-
-// Serve logo from project root (LOGO.png → /assets/logo/oppo-logo.png)
+// Serve logo from assets
 app.use('/assets/logo', express.static(path.join(__dirname, '../public/assets/logo')));
 
-// ─── Multer (file upload) ─────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: ORIGINAL_DIR,
-  filename: (_req, _file, cb) => {
-    cb(null, `${uuidv4()}-original.jpg`);
-  },
-});
+// ─── Multer (Memory Storage — No disk writes) ─────────────────────────────────
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'));
-  },
 });
 
-// ─── HTTPS Server + WebSocket ─────────────────────────────────────────────────
-const CERT_DIR = path.join(__dirname, 'certs');
-const sslOptions = {
-  key: fs.readFileSync(path.join(CERT_DIR, 'key.pem')),
-  cert: fs.readFileSync(path.join(CERT_DIR, 'cert.pem')),
-};
-const server = https.createServer(sslOptions, app);
-const wss = new WebSocket.Server({ server });
+// ─── HTTPS / HTTP Server + WebSockets ─────────────────────────────────────────
+let server;
 
-// Track all connected display clients
+// Use SSL certs if available locally, fallback to plain HTTP if missing (e.g. on Vercel)
+const CERT_DIR = path.join(__dirname, 'certs');
+const keyPath = path.join(CERT_DIR, 'key.pem');
+const certPath = path.join(CERT_DIR, 'cert.pem');
+
+if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  const sslOptions = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath),
+  };
+  server = https.createServer(sslOptions, app);
+  console.log('[Server] Started with local HTTPS SSL certificates.');
+} else {
+  server = http.createServer(app);
+  console.log('[Server] Started with HTTP server.');
+}
+
+// WebSockets (works on Render/Localhost, gracefully ignored if on Vercel)
+let wss = null;
+try {
+  wss = new WebSocket.Server({ server });
+  wss.on('connection', (ws, req) => {
+    const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
+    console.log(`[WS] Client connected: ${clientType}`);
+
+    if (clientType === 'display') {
+      displayClients.add(ws);
+    }
+
+    ws.on('close', () => displayClients.delete(ws));
+    ws.on('error', () => displayClients.delete(ws));
+  });
+} catch (e) {
+  console.log('[WS] WebSockets initialized in passive mode.');
+}
+
 const displayClients = new Set();
 
-wss.on('connection', (ws, req) => {
-  const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
-  console.log(`[WS] Client connected: ${clientType}`);
-
-  if (clientType === 'display') {
-    displayClients.add(ws);
-  }
-
-  ws.on('close', () => {
-    displayClients.delete(ws);
-    console.log(`[WS] Client disconnected: ${clientType}`);
-  });
-
-  ws.on('error', (err) => {
-    console.error('[WS] Error:', err.message);
-    displayClients.delete(ws);
-  });
-});
-
-/**
- * Broadcast a message to all connected display screen clients.
- */
 function broadcastToDisplays(event, payload) {
   const message = JSON.stringify({ event, payload });
   for (const client of displayClients) {
@@ -140,36 +117,37 @@ function broadcastToDisplays(event, payload) {
 
 /**
  * GET /api/config
- * Returns safe config values for the client (idle timeout, etc.).
  */
-app.get('/api/config', (_req, res) => {
+app.get('/api/config', (req, res) => {
+  const host = req.get('host');
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const dynamicBaseUrl = `${protocol}://${host}`;
+
   res.json({
-    idleTimeoutSeconds: config.idleTimeoutSeconds,
-    baseUrl: BASE_URL,
+    idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
+    baseUrl: dynamicBaseUrl,
   });
 });
 
 /**
- * GET /api/status
- * Returns server status and last session info.
+ * GET /api/latest
+ * Polling endpoint for Display screen (works on Vercel & Cloud without WebSockets).
  */
-app.get('/api/status', (_req, res) => {
-  const sessions = readSessions();
-  const last = sessions.length > 0 ? sessions[sessions.length - 1] : null;
+app.get('/api/latest', (_req, res) => {
+  if (!latestSession) {
+    return res.json({ id: null });
+  }
   res.json({
-    status: 'ok',
-    connectedDisplays: displayClients.size,
-    totalSessions: sessions.length,
-    lastSession: last,
-    config: {
-      idleTimeoutSeconds: config.idleTimeoutSeconds,
-    },
+    id: latestSession.id,
+    imageUrl: latestSession.imageBase64,
+    qrUrl: latestSession.qrUrl,
+    timestamp: latestSession.timestamp,
   });
 });
 
 /**
  * POST /api/capture
- * Receives image from mobile, processes with Gemini, generates QR, broadcasts to display.
+ * Receives image, processes with AI, stores in-memory as Base64 Data URL.
  */
 app.post('/api/capture', upload.single('photo'), async (req, res) => {
   if (!req.file) {
@@ -177,66 +155,61 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
   }
 
   const id = uuidv4();
-  const originalPath = req.file.path;
-  const processedFilename = `${id}-processed.jpg`;
-  const processedPath = path.join(PROCESSED_DIR, processedFilename);
+  const mimeType = req.file.mimetype || 'image/jpeg';
+  const host = req.get('host');
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const dynamicBaseUrl = `${protocol}://${host}`;
 
-  console.log(`[Capture] New photo — ID: ${id}`);
+  console.log(`[Capture] New photo received — ID: ${id}`);
 
-  // Save initial session entry
-  upsertSession({
+  // Save processing session
+  setSession({
     id,
     timestamp: new Date().toISOString(),
     status: 'processing',
-    originalPath: path.relative(process.cwd(), originalPath),
-    processedPath: null,
   });
 
-  // Respond immediately so mobile can show "Processing..." without waiting
+  // Respond immediately to mobile client
   res.json({ id, status: 'processing' });
 
-  // ── Async processing (non-blocking after response) ──
+  // Async processing
   try {
-    // Read original image
-    const imageBuffer = fs.readFileSync(originalPath);
-    const mimeType = req.file.mimetype || 'image/jpeg';
+    const imageBuffer = req.file.buffer;
 
-    // Process with Gemini
+    // Process image with active AI provider (Gemini / OpenAI)
     const processedBuffer = await processImage(imageBuffer, mimeType);
 
-    // Save processed image
-    fs.writeFileSync(processedPath, processedBuffer);
+    // Convert processed image to Base64 Data URL (Zero disk write)
+    const imageBase64 = `data:image/jpeg;base64,${processedBuffer.toString('base64')}`;
 
-    // Generate QR code pointing to the guest download page
-    const photoPageUrl = `${BASE_URL}/photo/${id}`;
-    const qrDataUrl = await generateQRCode(photoPageUrl);
+    // Generate QR code pointing to guest download page
+    const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
+    const qrUrl = await generateQRCode(photoPageUrl);
 
-    // Build public URLs
-    const imageUrl = `/uploads/processed/${processedFilename}`;
-    const qrUrl = qrDataUrl; // base64 data URL — no separate endpoint needed
-
-    // Update session
-    upsertSession({
+    // Save final session to memory
+    setSession({
       id,
+      timestamp: new Date().toISOString(),
       status: 'ready',
-      processedPath: path.relative(process.cwd(), processedPath),
+      imageBase64,
       photoPageUrl,
+      qrUrl,
     });
 
-    console.log(`[Capture] ✓ Photo ready — broadcasting to ${displayClients.size} display(s)`);
+    console.log(`[Capture] 🎉 Photo ready! Broadcasting & updating latest session.`);
 
-    // Broadcast to display screen(s)
-    broadcastToDisplays('new_photo_ready', { id, imageUrl, qrUrl });
+    // Broadcast via WebSockets if connected
+    broadcastToDisplays('new_photo_ready', { id, imageUrl: imageBase64, qrUrl });
   } catch (err) {
-    console.error('[Capture] Processing error:', err);
-    upsertSession({ id, status: 'error' });
+    console.error('[Capture] Error during processing:', err.message || err);
+    setSession({ id, status: 'error' });
     broadcastToDisplays('processing_error', { id, message: err.message });
   }
 });
 
 /**
  * GET /photo/:id
- * Guest download page — served as a dynamic HTML page.
+ * Guest download page — serves Base64 image directly so guest can download.
  */
 app.get('/photo/:id', (req, res) => {
   const { id } = req.params;
@@ -253,19 +226,15 @@ app.get('/photo/:id', (req, res) => {
         h1 { color: #1AAE55; }
       </style>
       </head>
-      <body><div style="text-align:center"><h1>OPPO Photobooth</h1><p>Photo not found or still processing. Try again in a moment!</p></div></body>
+      <body><div style="text-align:center"><h1>OPPO Photobooth</h1><p>Photo expired or still processing. Try again!</p></div></body>
       </html>
     `);
   }
 
-  const processedFilename = path.basename(session.processedPath || '');
-  const imageUrl = `/uploads/processed/${processedFilename}`;
-
-  // Serve the static download page template with injected values
   const templatePath = path.join(__dirname, '../public/photo/index.html');
   let html = fs.readFileSync(templatePath, 'utf8');
   html = html
-    .replace(/\{\{IMAGE_URL\}\}/g, imageUrl)
+    .replace(/\{\{IMAGE_URL\}\}/g, session.imageBase64)
     .replace(/\{\{PHOTO_ID\}\}/g, id)
     .replace(/\{\{TIMESTAMP\}\}/g, new Date(session.timestamp).toLocaleString());
 
@@ -281,14 +250,19 @@ app.get('/display', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/display/index.html'));
 });
 
-// ─── Start server ─────────────────────────────────────────────────────────────
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('╔══════════════════════════════════════════════════════════╗');
-  console.log('║        🟢  OPPO PHOTOBOOTH SERVER (HTTPS) STARTED  🟢    ║');
-  console.log('╠══════════════════════════════════════════════════════════╣');
-  console.log(`║  Display Screen :  https://localhost:${PORT}/display         ║`);
-  console.log(`║  Mobile Capture :  https://${localIP}:${PORT}/capture   ║`);
-  console.log('╚══════════════════════════════════════════════════════════╝');
-  console.log('');
-});
+// Export app for Vercel Serverless Function export
+module.exports = app;
+
+// Start standalone server if run directly (node server/index.js)
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('╔══════════════════════════════════════════════════════════╗');
+    console.log('║    🟢  OPPO PHOTOBOOTH SERVER (VERCEL READY) STARTED 🟢  ║');
+    console.log('╠══════════════════════════════════════════════════════════╣');
+    console.log(`║  Display Screen :  https://localhost:${PORT}/display         ║`);
+    console.log(`║  Mobile Capture :  https://${localIP}:${PORT}/capture   ║`);
+    console.log('╚══════════════════════════════════════════════════════════╝');
+    console.log('');
+  });
+}

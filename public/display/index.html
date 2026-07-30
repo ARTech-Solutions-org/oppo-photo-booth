@@ -718,9 +718,27 @@
       ws.addEventListener('error', (err) => {
         console.error('[WS] Error:', err);
       });
+    connectWebSocket();
+
+    // ─── HTTP Polling Fallback (for Vercel & Cloud deployments) ──────────────
+    let lastDisplayedPhotoId = null;
+    async function pollLatestPhoto() {
+      try {
+        const res = await fetch('/api/latest');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.id && data.id !== lastDisplayedPhotoId) {
+          lastDisplayedPhotoId = data.id;
+          console.log('[Poll] New photo detected:', data.id);
+          showPhotoReveal(data.imageUrl, data.qrUrl);
+        }
+      } catch (err) {
+        // Silent catch for poll errors
+      }
     }
 
-    connectWebSocket();
+    // Start polling every 1.5s for seamless Vercel sync
+    setInterval(pollLatestPhoto, 1500);
 
     // ─── Particle system ─────────────────────────────────────────────────────
     (function initParticles() {
