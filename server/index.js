@@ -14,7 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-const { processImage } = require('./gemini');
+const { processImage } = require('./ai-processor');
 const { generateQRCode } = require('./qr');
 const { getLocalIP } = require('./ip-helper');
 
