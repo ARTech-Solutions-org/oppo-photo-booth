@@ -25,9 +25,6 @@ const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
 const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// Global shared cloud sync URL (100% free, 0 setup, connects Vercel instances)
-const CLOUD_SYNC_URL = 'https://jsonblob.com/api/jsonBlob/019fb286-8176-7aa3-adc7-6f6b7b1d7b43';
-
 // Memory Storage fallback
 const sessionsMap = new Map();
 let latestSession = null;
@@ -69,22 +66,6 @@ async function uploadToFreeHost(imageBuffer, filename = 'photo.jpg') {
     console.warn('[Cloud Storage] Catbox upload notice:', e.message);
   }
   return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
-}
-
-/**
- * Sync latest photo metadata to cloud sync endpoint for Vercel display
- */
-async function syncToCloud(payload) {
-  try {
-    await fetch(CLOUD_SYNC_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    console.log('[Cloud Sync] ✓ Latest photo synced to cloud!');
-  } catch (e) {
-    console.warn('[Cloud Sync] Notice:', e.message);
-  }
 }
 
 // ─── Express App ─────────────────────────────────────────────────────────────
@@ -156,18 +137,6 @@ app.get('/api/config', (req, res) => {
 });
 
 app.get('/api/latest', async (req, res) => {
-  // Try cloud sync endpoint first for multi-instance Vercel sync
-  try {
-    const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
-    if (cloudRes.ok) {
-      const cloudData = await cloudRes.json();
-      if (cloudData && cloudData.id) {
-        return res.json(cloudData);
-      }
-    }
-  } catch (e) {}
-
-  // Local fallback
   if (!latestSession) return res.json({ id: null });
   res.json({
     id: latestSession.id,
@@ -216,9 +185,6 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 
     setSession(sessionData);
 
-    // Sync to cloud for Vercel Display screen
-    await syncToCloud(sessionData);
-
     // Sync directly to ntfy.sh for instant display update on Vercel
     const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}`;
     try {
@@ -244,16 +210,6 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 app.get('/photo/:id', async (req, res) => {
   const { id } = req.params;
   let session = getSession(id);
-
-  if (!session) {
-    try {
-      const cloudRes = await fetch(CLOUD_SYNC_URL, { headers: { 'Accept': 'application/json' } });
-      if (cloudRes.ok) {
-        const cloudData = await cloudRes.json();
-        if (cloudData && cloudData.id === id) session = cloudData;
-      }
-    } catch (e) {}
-  }
 
   if (!session || (session.status && session.status !== 'ready')) {
     return res.status(404).send(`
