@@ -11,7 +11,7 @@ timeout /t 1 /nobreak >nul
 
 echo.
 echo  =====================================================
-echo   OPPO PHOTOBOOTH - Starting Local HTTP Server...
+echo   OPPO PHOTOBOOTH - Starting Local HTTPS Server...
 echo  =====================================================
 echo.
 
@@ -26,21 +26,26 @@ for /f "tokens=*" %%i in ('node -e "const os=require('os');const ifaces=os.netwo
 
 echo.
 echo  =====================================================
-echo   LOCAL HTTP LINKS (STANDARD WEBSOCKET):
+echo   HTTPS LOCAL LINKS (10.10 IP):
 echo  =====================================================
 echo.
 echo   [1] Display Screen (PC):
-echo       http://localhost:3000/display
-echo       (or http://%LOCAL_IP%:3000/display)
+echo       https://%LOCAL_IP%:3000/display
+echo       (or https://localhost:3000/display)
 echo.
 echo   [2] Mobile Capture (Phone):
-echo       http://%LOCAL_IP%:3000/capture
+echo       https://%LOCAL_IP%:3000/capture
 echo.
+echo  =====================================================
+echo   IMPORTANT ON MOBILE PHONE:
+echo   1. Open https://%LOCAL_IP%:3000/capture on phone
+echo   2. Tap "Advanced" then "Proceed / Continue"
+echo   3. Allow Camera permission!
 echo  =====================================================
 echo.
 
 :: Open Display screen in default browser
-start "" "http://localhost:3000/display"
+start "" "https://%LOCAL_IP%:3000/display"
 
 pause
 
