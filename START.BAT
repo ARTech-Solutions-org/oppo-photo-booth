@@ -26,26 +26,26 @@ for /f "tokens=*" %%i in ('node -e "const os=require('os');const ifaces=os.netwo
 
 echo.
 echo  =====================================================
-echo   LOCAL LINKS:
+echo   LOCAL NETWORK LINKS (10.10 IP):
 echo  =====================================================
 echo.
-echo   [1] Display Screen (Open on PC):
-echo       https://localhost:3000/display
-echo       (or https://%LOCAL_IP%:3000/display)
+echo   [1] Display Screen (PC):
+echo       https://%LOCAL_IP%:3000/display
 echo.
-echo   [2] Mobile Capture (Open on Phone):
+echo   [2] Mobile Capture (Phone):
 echo       https://%LOCAL_IP%:3000/capture
 echo.
 echo  =====================================================
-echo   IMPORTANT ON PHONE:
-echo   - Open the Mobile Capture link on your phone.
-echo   - If you see a security warning, tap "Advanced" then "Proceed".
-echo   - Allow Camera permission!
+echo   IMPORTANT:
+echo   - Open both links on the respective devices.
+echo   - If you see a security warning on phone or PC,
+echo     tap "Advanced" then "Proceed".
+echo   - Allow Camera permission on phone!
 echo  =====================================================
 echo.
 
-:: Open Display screen in default browser
-start "" "https://localhost:3000/display"
+:: Open Display screen in default browser using the 10.10 IP
+start "" "https://%LOCAL_IP%:3000/display"
 
 pause
 

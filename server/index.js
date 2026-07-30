@@ -105,16 +105,28 @@ try {
   const wss = new WebSocket.Server({ server });
   wss.on('connection', (ws, req) => {
     const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
-    if (clientType === 'display') displayClients.add(ws);
-    ws.on('close', () => displayClients.delete(ws));
-    ws.on('error', () => displayClients.delete(ws));
+    if (clientType === 'display') {
+      displayClients.add(ws);
+      console.log(`[WS] 🟢 Display connected! Active display clients: ${displayClients.size}`);
+    }
+    ws.on('close', () => {
+      displayClients.delete(ws);
+      console.log(`[WS] 🔴 Display disconnected. Active display clients: ${displayClients.size}`);
+    });
+    ws.on('error', (err) => {
+      displayClients.delete(ws);
+      console.log('[WS] Error:', err.message);
+    });
   });
 } catch (e) {}
 
 function broadcastToDisplays(event, payload) {
   const message = JSON.stringify({ event, payload });
+  console.log(`[WS] 📡 Broadcasting '${event}' to ${displayClients.size} display client(s)...`);
   for (const client of displayClients) {
-    if (client.readyState === WebSocket.OPEN) client.send(message);
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
   }
 }
 
