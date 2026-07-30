@@ -643,7 +643,8 @@
         const formData = new FormData();
         formData.append('photo', capturedBlob, 'capture.jpg');
 
-        const res = await fetch('/api/capture', {
+        const room = new URLSearchParams(location.search).get('room') || 'default';
+        const res = await fetch(`/api/capture?room=${encodeURIComponent(room)}`, {
           method: 'POST',
           body: formData,
         });

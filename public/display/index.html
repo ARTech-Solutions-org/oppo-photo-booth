@@ -724,7 +724,8 @@
     let lastDisplayedPhotoId = null;
     async function pollLatestPhoto() {
       try {
-        const res = await fetch('/api/latest');
+        const room = new URLSearchParams(location.search).get('room') || 'default';
+        const res = await fetch(`/api/latest?room=${encodeURIComponent(room)}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data && data.id && data.id !== lastDisplayedPhotoId) {

@@ -1,8 +1,8 @@
 /**
  * server/index.js
  * Express + WebSocket server for OPPO Photobooth.
- * Vercel-ready: Uses in-memory sessions & Data URLs (No disk storage required).
- * Supports both WebSockets and HTTP Polling for universal cloud deployment.
+ * Vercel-ready: Uses in-memory sessions + Vercel KV REST API (100% FREE).
+ * Supports Room Codes (?room=123) for connecting mobile and display.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
@@ -23,10 +23,9 @@ const { getLocalIP } = require('./ip-helper');
 // ─── Config ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const localIP = getLocalIP();
-const BASE_URL = process.env.BASE_URL || `https://${localIP}:${PORT}`;
 const IDLE_TIMEOUT_SECONDS = parseInt(process.env.IDLE_TIMEOUT || '60', 10);
 
-// ─── In-Memory Session Store (Vercel / Cloud compatible, zero disk requirement) ─
+// ─── In-Memory Session Store ──────────────────────────────────────────────────
 const sessionsMap = new Map();
 let latestSession = null;
 
@@ -35,8 +34,6 @@ function setSession(session) {
   if (session.status === 'ready') {
     latestSession = session;
   }
-
-  // Keep memory clean: remove sessions older than 2 hours
   if (sessionsMap.size > 200) {
     const oldestKey = sessionsMap.keys().next().value;
     sessionsMap.delete(oldestKey);
@@ -47,96 +44,122 @@ function getSession(id) {
   return sessionsMap.get(id) || null;
 }
 
+// ─── Vercel KV / Upstash REST Helper (100% FREE, Zero extra packages) ────────
+async function kvSet(key, value) {
+  const url = process.env.KV_REST_API_URL || process.env.VERCEL_KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.VERCEL_KV_REST_API_TOKEN;
+  if (!url || !token) return;
+
+  try {
+    await fetch(`${url}/set/${key}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(value),
+    });
+  } catch (e) {
+    console.warn('[KV] Write warning:', e.message);
+  }
+}
+
+async function kvGet(key) {
+  const url = process.env.KV_REST_API_URL || process.env.VERCEL_KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.VERCEL_KV_REST_API_TOKEN;
+  if (!url || !token) return null;
+
+  try {
+    const res = await fetch(`${url}/get/${key}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.result) return null;
+    return typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ─── Express App ─────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
 // Serve static public files
 app.use(express.static(path.join(__dirname, '../public')));
-
-// Serve logo from assets
 app.use('/assets/logo', express.static(path.join(__dirname, '../public/assets/logo')));
 
-// ─── Multer (Memory Storage — No disk writes) ─────────────────────────────────
+// Multer memory storage
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// ─── HTTPS / HTTP Server + WebSockets ─────────────────────────────────────────
+// HTTPS / HTTP Server
 let server;
-
-// Use SSL certs if available locally, fallback to plain HTTP if missing (e.g. on Vercel)
 const CERT_DIR = path.join(__dirname, 'certs');
 const keyPath = path.join(CERT_DIR, 'key.pem');
 const certPath = path.join(CERT_DIR, 'cert.pem');
 
 if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  const sslOptions = {
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
-  };
+  const sslOptions = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
   server = https.createServer(sslOptions, app);
-  console.log('[Server] Started with local HTTPS SSL certificates.');
 } else {
   server = http.createServer(app);
-  console.log('[Server] Started with HTTP server.');
 }
 
-// WebSockets (works on Render/Localhost, gracefully ignored if on Vercel)
-let wss = null;
+// WebSockets (Localhost/Render)
+const displayClients = new Set();
 try {
-  wss = new WebSocket.Server({ server });
+  const wss = new WebSocket.Server({ server });
   wss.on('connection', (ws, req) => {
     const clientType = new URL(req.url, `http://localhost`).searchParams.get('client') || 'unknown';
-    console.log(`[WS] Client connected: ${clientType}`);
-
-    if (clientType === 'display') {
-      displayClients.add(ws);
-    }
-
+    if (clientType === 'display') displayClients.add(ws);
     ws.on('close', () => displayClients.delete(ws));
     ws.on('error', () => displayClients.delete(ws));
   });
-} catch (e) {
-  console.log('[WS] WebSockets initialized in passive mode.');
-}
-
-const displayClients = new Set();
+} catch (e) {}
 
 function broadcastToDisplays(event, payload) {
   const message = JSON.stringify({ event, payload });
   for (const client of displayClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
+    if (client.readyState === WebSocket.OPEN) client.send(message);
   }
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/config
- */
 app.get('/api/config', (req, res) => {
   const host = req.get('host');
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-  const dynamicBaseUrl = `${protocol}://${host}`;
-
   res.json({
     idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
-    baseUrl: dynamicBaseUrl,
+    baseUrl: `${protocol}://${host}`,
   });
 });
 
 /**
  * GET /api/latest
- * Polling endpoint for Display screen (works on Vercel & Cloud without WebSockets).
+ * Polling endpoint for Display screen with room code support (?room=123).
  */
-app.get('/api/latest', (_req, res) => {
-  if (!latestSession) {
-    return res.json({ id: null });
+app.get('/api/latest', async (req, res) => {
+  const room = (req.query.room || 'default').toLowerCase().trim();
+
+  // Try Vercel KV first for multi-instance cloud sync
+  const kvData = await kvGet(`latest_${room}`);
+  if (kvData) {
+    return res.json({
+      id: kvData.id,
+      imageUrl: kvData.imageBase64,
+      qrUrl: kvData.qrUrl,
+      timestamp: kvData.timestamp,
+    });
   }
+
+  // Fallback to local memory session
+  if (!latestSession) return res.json({ id: null });
+
   res.json({
     id: latestSession.id,
     imageUrl: latestSession.imageBase64,
@@ -147,73 +170,64 @@ app.get('/api/latest', (_req, res) => {
 
 /**
  * POST /api/capture
- * Receives image, processes with AI, stores in-memory as Base64 Data URL.
+ * Receives image, processes with AI, syncs via KV & memory.
  */
 app.post('/api/capture', upload.single('photo'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No image file received.' });
-  }
+  if (!req.file) return res.status(400).json({ error: 'No image file received.' });
 
   const id = uuidv4();
+  const room = (req.query.room || req.body.room || 'default').toLowerCase().trim();
   const mimeType = req.file.mimetype || 'image/jpeg';
   const host = req.get('host');
   const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const dynamicBaseUrl = `${protocol}://${host}`;
 
-  console.log(`[Capture] New photo received — ID: ${id}`);
+  console.log(`[Capture] New photo — ID: ${id} | Room: ${room}`);
 
-  // Save processing session
-  setSession({
-    id,
-    timestamp: new Date().toISOString(),
-    status: 'processing',
-  });
-
-  // Respond immediately to mobile client
   res.json({ id, status: 'processing' });
 
-  // Async processing
   try {
     const imageBuffer = req.file.buffer;
-
-    // Process image with active AI provider (Gemini / OpenAI)
     const processedBuffer = await processImage(imageBuffer, mimeType);
-
-    // Convert processed image to Base64 Data URL (Zero disk write)
     const imageBase64 = `data:image/jpeg;base64,${processedBuffer.toString('base64')}`;
 
-    // Generate QR code pointing to guest download page
     const photoPageUrl = `${dynamicBaseUrl}/photo/${id}`;
     const qrUrl = await generateQRCode(photoPageUrl);
 
-    // Save final session to memory
-    setSession({
+    const sessionData = {
       id,
       timestamp: new Date().toISOString(),
       status: 'ready',
       imageBase64,
       photoPageUrl,
       qrUrl,
-    });
+      room,
+    };
 
-    console.log(`[Capture] 🎉 Photo ready! Broadcasting & updating latest session.`);
+    // Store locally and in Vercel KV for cloud sync
+    setSession(sessionData);
+    await kvSet(`latest_${room}`, sessionData);
+    await kvSet(`session_${id}`, sessionData);
 
-    // Broadcast via WebSockets if connected
+    console.log(`[Capture] 🎉 Photo ready! Synced to room "${room}".`);
     broadcastToDisplays('new_photo_ready', { id, imageUrl: imageBase64, qrUrl });
   } catch (err) {
-    console.error('[Capture] Error during processing:', err.message || err);
-    setSession({ id, status: 'error' });
+    console.error('[Capture] Processing error:', err.message || err);
     broadcastToDisplays('processing_error', { id, message: err.message });
   }
 });
 
 /**
  * GET /photo/:id
- * Guest download page — serves Base64 image directly so guest can download.
+ * Guest download page.
  */
-app.get('/photo/:id', (req, res) => {
+app.get('/photo/:id', async (req, res) => {
   const { id } = req.params;
-  const session = getSession(id);
+  let session = getSession(id);
+
+  if (!session) {
+    session = await kvGet(`session_${id}`);
+  }
 
   if (!session || session.status !== 'ready') {
     return res.status(404).send(`
@@ -241,19 +255,13 @@ app.get('/photo/:id', (req, res) => {
   res.send(html);
 });
 
-// Route capture and display pages
-app.get('/capture', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../public/capture/index.html'));
-});
+// Root path redirect
+app.get('/', (_req, res) => res.redirect('/display'));
+app.get('/capture', (_req, res) => res.sendFile(path.join(__dirname, '../public/capture/index.html')));
+app.get('/display', (_req, res) => res.sendFile(path.join(__dirname, '../public/display/index.html')));
 
-app.get('/display', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../public/display/index.html'));
-});
-
-// Export app for Vercel Serverless Function export
 module.exports = app;
 
-// Start standalone server if run directly (node server/index.js)
 if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => {
     console.log('');
