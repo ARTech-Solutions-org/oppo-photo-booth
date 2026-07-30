@@ -170,6 +170,8 @@ app.get('/api/latest', async (req, res) => {
 app.post('/api/capture', upload.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file received.' });
 
+  const room = req.query.room || 'default';
+
   const id = uuidv4();
   const mimeType = req.file.mimetype || 'image/jpeg';
   const host = req.get('host');
@@ -203,6 +205,18 @@ app.post('/api/capture', upload.single('photo'), async (req, res) => {
 
     // Sync to cloud for Vercel Display screen
     await syncToCloud(sessionData);
+
+    // Sync directly to ntfy.sh for instant display update on Vercel
+    const ntfyUrl = `https://ntfy.sh/oppo_booth_${encodeURIComponent(room)}`;
+    try {
+      await fetch(ntfyUrl, {
+        method: 'POST',
+        body: JSON.stringify({ event: 'new_photo_ready', payload: { id, imageUrl: directImageUrl, qrUrl } })
+      });
+      console.log(`[ntfy] Published instant cloud event to room: ${room}`);
+    } catch (e) {
+      console.error('[ntfy] Error publishing:', e.message);
+    }
 
     // Local WebSocket broadcast
     broadcastToDisplays('new_photo_ready', { id, imageUrl: directImageUrl, qrUrl });
